@@ -1,0 +1,4 @@
+Para la persona que revise el repositorio:
+A base del examen adelantado y de otras materias, no habíamos visto que el repositorio tenia que ser actualizado
+de manera frecuente, a pesar de que el trabajo se empezó desde hace tiempo, nunca había sido subido a este rep,
+Si ocurre un rebajo de puntos por esto, lo entendemos y asumimos por no fijarnos en esa instrucción.
