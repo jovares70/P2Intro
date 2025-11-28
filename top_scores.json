@@ -1,6 +1,10 @@
 {
   "Escapa": [
     {
+      "name": "AAA",
+      "score": 987
+    },
+    {
       "name": "Q",
       "score": 984
     },
@@ -13,12 +17,8 @@
       "score": 971
     },
     {
-      "name": "Q",
-      "score": 0
-    },
-    {
-      "name": "Q",
-      "score": 0
+      "name": "AA",
+      "score": 30
     }
   ],
   "Cazador": []
