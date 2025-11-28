@@ -25,12 +25,12 @@ class Posicion:
     #S:
     #R:
     #F: Representa una coordenada en la matriz
-    def __init__(self, f, c):
-        self.f = f
-        self.c = c
+    def __init__(self, fila, columna):
+        self.fila = fila
+        self.columna = columna
 
     def __eq__(self, other):
-        return isinstance(other, Posicion) and self.f == other.f and self.c == other.c
+        return isinstance(other, Posicion) and self.fila == other.fila and self.columna == other.columna
 
 class Trampa:
     #E: Posicion, float
@@ -61,29 +61,51 @@ def generar_laberinto(filas, columnas):
     laberinto = [[PARED for _ in range(columnas)] for _ in range(filas)]
 
     def vecinos(celda):
-        f, c = celda
+        fila, columna = celda
         direcciones = [(-2, 0), (2, 0), (0, -2), (0, 2)]
         random.shuffle(direcciones)
-        for df, dc in direcciones:
-            nf, nc = f + df, c + dc
-            if 0 < nf < filas - 1 and 0 < nc < columnas - 1 and laberinto[nf][nc] == PARED:
-                yield (nf, nc, df, dc)
+        for delta_fila, delta_columna in direcciones:
+            nueva_fila, nueva_columna = fila + delta_fila, columna + delta_columna
+            if 0 < nueva_fila < filas - 1 and 0 < nueva_columna < columnas - 1 and laberinto[nueva_fila][nueva_columna] == PARED:
+                yield (nueva_fila, nueva_columna, delta_fila, delta_columna)
 
     pila = [(1, 1)]
     laberinto[1][1] = CAMINO
     while pila:
         celda = pila[-1]
         encontrado = False
-        for nf, nc, df, dc in vecinos(celda):
-            if laberinto[nf][nc] == PARED:
-                laberinto[celda[0] + df // 2][celda[1] + dc // 2] = CAMINO
-                laberinto[nf][nc] = CAMINO
-                pila.append((nf, nc))
+        for nueva_fila, nueva_columna, delta_fila, delta_columna in vecinos(celda):
+            if laberinto[nueva_fila][nueva_columna] == PARED:
+                laberinto[celda[0] + delta_fila // 2][celda[1] + delta_columna // 2] = CAMINO
+                laberinto[nueva_fila][nueva_columna] = CAMINO
+                pila.append((nueva_fila, nueva_columna))
                 encontrado = True
                 break
         if not encontrado:
             pila.pop()
     return laberinto
+
+def obtener_camino_solucion(laberinto, inicio, fin):
+    #E: Matriz, tupla, tupla
+    #S: Set de tuplas
+    #R:
+    #F: Encuentra el camino desde inicio a fin
+    filas = len(laberinto)
+    cols = len(laberinto[0])
+    cola = [(inicio, [inicio])]
+    visitados = set()
+    visitados.add(inicio)
+    while cola:
+        (fila, columna), camino = cola.pop(0)
+        if (fila, columna) == fin:
+            return set(camino)
+        direcciones = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        for delta_fila, delta_columna in direcciones:
+            nueva_fila, nueva_columna = fila + delta_fila, columna + delta_columna
+            if 0 <= nueva_fila < filas and 0 <= nueva_columna < cols and laberinto[nueva_fila][nueva_columna] != PARED and (nueva_fila, nueva_columna) not in visitados:
+                visitados.add((nueva_fila, nueva_columna))
+                cola.append(((nueva_fila, nueva_columna), camino + [(nueva_fila, nueva_columna)]))
+    return set()
 
 def distribuir_celdas_especiales(matriz, frac_tunel=0.03, frac_liana=0.03):
     #E: Matriz, floats
@@ -92,14 +114,18 @@ def distribuir_celdas_especiales(matriz, frac_tunel=0.03, frac_liana=0.03):
     #F: Convierte caminos en túneles o lianas aleatoriamente
     filas = len(matriz)
     cols = len(matriz[0])
-    for f in range(1, filas - 1):
-        for c in range(1, cols - 1):
-            if matriz[f][c] == CAMINO:
+    inicio = (1, 1)
+    fin = (filas - 2, cols - 2)
+    camino_seguro = obtener_camino_solucion(matriz, inicio, fin)
+    for fila in range(1, filas - 1):
+        for columna in range(1, cols - 1):
+            if matriz[fila][columna] == CAMINO:
                 rnd = random.random()
                 if rnd < frac_tunel:
-                    matriz[f][c] = TUNEL
+                    matriz[fila][columna] = TUNEL
                 elif rnd < frac_tunel + frac_liana:
-                    matriz[f][c] = LIANA
+                    if (fila, columna) not in camino_seguro:
+                        matriz[fila][columna] = LIANA
 
 def cargar_puntajes():
     #E:
@@ -211,13 +237,13 @@ class AplicacionJuego:
         #R:
         #F: Dibuja el estado actual del juego
         self.canvas.delete("all")
-        for f in range(FILAS):
-            for c in range(COLUMNAS):
-                x1 = c * TAMANO_CELDA
-                y1 = f * TAMANO_CELDA
+        for fila in range(FILAS):
+            for columna in range(COLUMNAS):
+                x1 = columna * TAMANO_CELDA
+                y1 = fila * TAMANO_CELDA
                 x2 = x1 + TAMANO_CELDA
                 y2 = y1 + TAMANO_CELDA
-                tipo = self.mapa[f][c]
+                tipo = self.mapa[fila][columna]
                 color = "black"
                 if tipo == PARED: color = "gray20"
                 elif tipo == CAMINO: color = "lightgray"
@@ -225,23 +251,23 @@ class AplicacionJuego:
                 elif tipo == LIANA: color = "darkgreen"
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="black")
         
-        ex1 = self.pos_salida.c * TAMANO_CELDA
-        ey1 = self.pos_salida.f * TAMANO_CELDA
+        ex1 = self.pos_salida.columna * TAMANO_CELDA
+        ey1 = self.pos_salida.fila * TAMANO_CELDA
         self.canvas.create_rectangle(ex1, ey1, ex1 + TAMANO_CELDA, ey1 + TAMANO_CELDA, fill="gold", outline="black")
 
         for t in self.trampas:
-            x = t.posicion.c * TAMANO_CELDA + TAMANO_CELDA // 4
-            y = t.posicion.f * TAMANO_CELDA + TAMANO_CELDA // 4
+            x = t.posicion.columna * TAMANO_CELDA + TAMANO_CELDA // 4
+            y = t.posicion.fila * TAMANO_CELDA + TAMANO_CELDA // 4
             self.canvas.create_oval(x, y, x + TAMANO_CELDA // 2, y + TAMANO_CELDA // 2, fill="red")
 
         for e in self.enemigos:
             if not e.muerto:
-                x = e.posicion.c * TAMANO_CELDA + 3
-                y = e.posicion.f * TAMANO_CELDA + 3
+                x = e.posicion.columna * TAMANO_CELDA + 3
+                y = e.posicion.fila * TAMANO_CELDA + 3
                 self.canvas.create_rectangle(x, y, x + TAMANO_CELDA - 6, y + TAMANO_CELDA - 6, fill="blue")
 
-        x = self.pos_jugador.c * TAMANO_CELDA + 3
-        y = self.pos_jugador.f * TAMANO_CELDA + 3
+        x = self.pos_jugador.columna * TAMANO_CELDA + 3
+        y = self.pos_jugador.fila * TAMANO_CELDA + 3
         self.canvas.create_oval(x, y, x + TAMANO_CELDA - 6, y + TAMANO_CELDA - 6, fill="orange")
 
     def actualizar_etiquetas_ui(self):
@@ -324,15 +350,15 @@ class AplicacionJuego:
         #R:
         #F: Encuentra una celda válida aleatoria
         candidatos = []
-        for f in range(1, FILAS - 1):
-            for c in range(1, COLUMNAS - 1):
-                tipo = self.mapa[f][c]
+        for fila in range(1, FILAS - 1):
+            for columna in range(1, COLUMNAS - 1):
+                tipo = self.mapa[fila][columna]
                 if tipo in (CAMINO, LIANA):
                     if cerca_borde:
-                        if f <= 2 or c <= 2 or f >= FILAS - 3 or c >= COLUMNAS - 3:
-                            candidatos.append(Posicion(f, c))
+                        if fila <= 2 or columna <= 2 or fila >= FILAS - 3 or columna >= COLUMNAS - 3:
+                            candidatos.append(Posicion(fila, columna))
                     else:
-                        candidatos.append(Posicion(f, c))
+                        candidatos.append(Posicion(fila, columna))
         return random.choice(candidatos) if candidatos else Posicion(1, 1)
 
     def al_presionar_tecla(self, event):
@@ -350,16 +376,16 @@ class AplicacionJuego:
             'd': (0, 1), 'right': (0, 1)
         }
         if tecla in movimientos:
-            df, dc = movimientos[tecla]
+            delta_fila, delta_columna = movimientos[tecla]
             pasos = 2 if self.corriendo and self.energia > 0 else 1
             movido = False
             for _ in range(pasos):
-                nf = self.pos_jugador.f + df
-                nc = self.pos_jugador.c + dc
-                if 0 <= nf < FILAS and 0 <= nc < COLUMNAS:
-                    tipo = self.mapa[nf][nc]
+                nueva_fila = self.pos_jugador.fila + delta_fila
+                nueva_columna = self.pos_jugador.columna + delta_columna
+                if 0 <= nueva_fila < FILAS and 0 <= nueva_columna < COLUMNAS:
+                    tipo = self.mapa[nueva_fila][nueva_columna]
                     if tipo in (CAMINO, TUNEL):
-                        self.pos_jugador = Posicion(nf, nc)
+                        self.pos_jugador = Posicion(nueva_fila, nueva_columna)
                         movido = True
             if self.corriendo and movido:
                 self.energia = max(0, self.energia - 6)
@@ -401,7 +427,7 @@ class AplicacionJuego:
             messagebox.showinfo("Trampa", f"Espera {restante:.1f}s para volver a colocar.")
             return
         
-        self.trampas.append(Trampa(Posicion(self.pos_jugador.f, self.pos_jugador.c), ahora))
+        self.trampas.append(Trampa(Posicion(self.pos_jugador.fila, self.pos_jugador.columna), ahora))
         self.tiempo_ultima_trampa = ahora
         self.dibujar_mapa()
         self.actualizar_etiquetas_ui()
@@ -488,9 +514,9 @@ class AplicacionJuego:
         #S: Bool
         #R:
         #F: Verifica si un enemigo puede estar en esa celda
-        if not (0 <= pos.f < FILAS and 0 <= pos.c < COLUMNAS):
+        if not (0 <= pos.fila < FILAS and 0 <= pos.columna < COLUMNAS):
             return False
-        tipo = self.mapa[pos.f][pos.c]
+        tipo = self.mapa[pos.fila][pos.columna]
         return tipo in (CAMINO, LIANA)
 
     def mover_enemigo_hacia(self, enemigo, objetivo):
@@ -499,11 +525,11 @@ class AplicacionJuego:
         #R:
         #F: Mueve al enemigo acercándolo al objetivo
         mejor = enemigo.posicion
-        mejor_dist = abs(enemigo.posicion.f - objetivo.f) + abs(enemigo.posicion.c - objetivo.c)
-        for df, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            cand = Posicion(enemigo.posicion.f + df, enemigo.posicion.c + dc)
+        mejor_dist = abs(enemigo.posicion.fila - objetivo.fila) + abs(enemigo.posicion.columna - objetivo.columna)
+        for delta_fila, delta_columna in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            cand = Posicion(enemigo.posicion.fila + delta_fila, enemigo.posicion.columna + delta_columna)
             if self.es_celda_enemigo_valida(cand):
-                d = abs(cand.f - objetivo.f) + abs(cand.c - objetivo.c)
+                d = abs(cand.fila - objetivo.fila) + abs(cand.columna - objetivo.columna)
                 if d < mejor_dist:
                     mejor_dist = d
                     mejor = cand
@@ -516,10 +542,10 @@ class AplicacionJuego:
         #F: Mueve al enemigo alejándolo de la posición
         mejor = enemigo.posicion
         opciones = []
-        for df, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            cand = Posicion(enemigo.posicion.f + df, enemigo.posicion.c + dc)
+        for delta_fila, delta_columna in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            cand = Posicion(enemigo.posicion.fila + delta_fila, enemigo.posicion.columna + delta_columna)
             if self.es_celda_enemigo_valida(cand):
-                d = abs(cand.f - desde_pos.f) + abs(cand.c - desde_pos.c)
+                d = abs(cand.fila - desde_pos.fila) + abs(cand.columna - desde_pos.columna)
                 opciones.append((d, cand))
         if opciones:
             opciones.sort(key=lambda x: x[0], reverse=True)
