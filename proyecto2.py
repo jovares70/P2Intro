@@ -4,7 +4,7 @@ import random
 import json
 import time
 
-# Configuración básica
+#Configuración básica
 TAMANO_CELDA = 24
 FILAS = 21
 COLUMNAS = 21
@@ -14,7 +14,7 @@ TIEMPO_REAPARICION_ENEMIGO = 10.0
 INTERVALO_TICK_MS = 250
 ARCHIVO_PUNTAJES = "top_scores.json"
 
-# Tipos de casilla
+#Tipos de casilla
 CAMINO = 0
 PARED = 1
 TUNEL = 2
@@ -31,6 +31,9 @@ class Posicion:
 
     def __eq__(self, other):
         return isinstance(other, Posicion) and self.fila == other.fila and self.columna == other.columna
+
+    def __hash__(self):
+        return hash((self.fila, self.columna))
 
 class Trampa:
     #E: Posicion, float
@@ -107,7 +110,7 @@ def obtener_camino_solucion(laberinto, inicio, fin):
                 cola.append(((nueva_fila, nueva_columna), camino + [(nueva_fila, nueva_columna)]))
     return set()
 
-def distribuir_celdas_especiales(matriz, frac_tunel=0.03, frac_liana=0.03):
+def distribuir_celdas_especiales(matriz, modo, frac_tunel=0.03, frac_liana=0.03):
     #E: Matriz, floats
     #S:
     #R:
@@ -122,9 +125,14 @@ def distribuir_celdas_especiales(matriz, frac_tunel=0.03, frac_liana=0.03):
             if matriz[fila][columna] == CAMINO:
                 rnd = random.random()
                 if rnd < frac_tunel:
-                    matriz[fila][columna] = TUNEL
+                    if modo == "Cazador" and (fila, columna) in camino_seguro:
+                        pass
+                    else:
+                        matriz[fila][columna] = TUNEL
                 elif rnd < frac_tunel + frac_liana:
-                    if (fila, columna) not in camino_seguro:
+                    if (modo == "Escapa" or modo == "Cazador") and (fila, columna) in camino_seguro:
+                        pass
+                    else:
                         matriz[fila][columna] = LIANA
 
 def cargar_puntajes():
@@ -247,8 +255,10 @@ class AplicacionJuego:
                 color = "black"
                 if tipo == PARED: color = "gray20"
                 elif tipo == CAMINO: color = "lightgray"
-                elif tipo == TUNEL: color = "sandybrown"
-                elif tipo == LIANA: color = "darkgreen"
+                elif tipo == TUNEL:
+                    color = "sandybrown" if self.modo == "Escapa" else "saddlebrown"
+                elif tipo == LIANA:
+                    color = "darkgreen" if self.modo == "Escapa" else "olivedrab"
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="black")
         
         ex1 = self.pos_salida.columna * TAMANO_CELDA
@@ -324,7 +334,7 @@ class AplicacionJuego:
         self.btn_correr.config(text="Correr: OFF")
         
         self.mapa = generar_laberinto(FILAS, COLUMNAS)
-        distribuir_celdas_especiales(self.mapa, frac_tunel=0.03, frac_liana=0.04)
+        distribuir_celdas_especiales(self.mapa, modo, frac_tunel=0.03, frac_liana=0.04)
         
         self.pos_jugador = Posicion(1, 1)
         self.pos_salida = Posicion(FILAS - 2, COLUMNAS - 2)
@@ -332,7 +342,16 @@ class AplicacionJuego:
         self.enemigos = []
         num_enemigos = 3 if modo == "Escapa" else 4
         for i in range(num_enemigos):
-            spawn = self.encontrar_celda_libre(cerca_borde=True)
+            while True:
+                spawn = self.encontrar_celda_libre(cerca_borde=True)
+                if modo == "Cazador":
+                    survivor_can_escape = self.verificar_alcanzabilidad(spawn, self.pos_salida, (CAMINO, LIANA))
+                    hunter_can_reach = self.verificar_alcanzabilidad(self.pos_jugador, spawn, (CAMINO, TUNEL))
+                    
+                    if survivor_can_escape and hunter_can_reach:
+                        break
+                else:
+                    break
             self.enemigos.append(Enemigo(i + 1, spawn))
             
         self.trampas = []
@@ -341,8 +360,39 @@ class AplicacionJuego:
         self.jugando = True
         self.energia = self.energia_max
         
+        if modo == "Cazador":
+            self.btn_correr.pack_forget()
+            self.btn_trampa.pack_forget()
+        else:
+            self.btn_correr.pack(pady=6)
+            self.btn_trampa.pack(pady=6)
+        
         self.dibujar_mapa()
         self.actualizar_etiquetas_ui()
+
+    def verificar_alcanzabilidad(self, inicio, fin, tipos_validos):
+        #E: Posicion, Posicion, tupla
+        #S: Bool
+        #R:
+        #F: Verifica si existe un camino entre inicio y fin usando solo tipos_validos
+        cola = [inicio]
+        visitados = {inicio}
+        while cola:
+            actual = cola.pop(0)
+            if actual == fin:
+                return True
+            
+            direcciones = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            for df, dc in direcciones:
+                nf, nc = actual.fila + df, actual.columna + dc
+                if 0 <= nf < FILAS and 0 <= nc < COLUMNAS:
+                    pos_n = Posicion(nf, nc)
+                    if pos_n not in visitados:
+                        tipo = self.mapa[nf][nc]
+                        if tipo in tipos_validos:
+                            visitados.add(pos_n)
+                            cola.append(pos_n)
+        return False
 
     def encontrar_celda_libre(self, cerca_borde=False):
         #E: Bool
@@ -379,12 +429,18 @@ class AplicacionJuego:
             delta_fila, delta_columna = movimientos[tecla]
             pasos = 2 if self.corriendo and self.energia > 0 else 1
             movido = False
+            
+            if self.modo == "Escapa":
+                validos = (CAMINO, TUNEL)
+            else:
+                validos = (CAMINO, TUNEL)
+
             for _ in range(pasos):
                 nueva_fila = self.pos_jugador.fila + delta_fila
                 nueva_columna = self.pos_jugador.columna + delta_columna
                 if 0 <= nueva_fila < FILAS and 0 <= nueva_columna < COLUMNAS:
                     tipo = self.mapa[nueva_fila][nueva_columna]
-                    if tipo in (CAMINO, TUNEL):
+                    if tipo in validos:
                         self.pos_jugador = Posicion(nueva_fila, nueva_columna)
                         movido = True
             if self.corriendo and movido:
@@ -432,6 +488,28 @@ class AplicacionJuego:
         self.dibujar_mapa()
         self.actualizar_etiquetas_ui()
 
+    def verificar_colision_enemigo_jugador(self):
+        #E:
+        #S: Bool
+        #R:
+        #F: Verifica si hay colisión entre jugador y enemigos
+        for e in self.enemigos:
+            if not e.muerto and e.posicion == self.pos_jugador:
+                if self.modo == "Escapa":
+                    messagebox.showinfo("Derrota", "Un enemigo te alcanzó. Perdiste.")
+                    actualizar_puntajes("Escapa", self.nombre_jugador, self.puntaje)
+                    self.jugando = False
+                    return True
+                elif self.modo == "Cazador":
+                    pts = 50
+                    self.puntaje += pts
+                    e.muerto = True
+                    e.tiempo_muerte = time.time()
+                    messagebox.showinfo("Cazador", f"Cazaste a un enemigo! +{pts} pts")
+                    self.dibujar_mapa()
+                    self.actualizar_etiquetas_ui()
+        return False
+
     def verificar_colisiones_movimiento(self):
         #E:
         #S:
@@ -445,22 +523,36 @@ class AplicacionJuego:
             actualizar_puntajes("Escapa", self.nombre_jugador, final)
             self.jugando = False
             self.dibujar_mapa()
-        
-        for e in self.enemigos:
-            if not e.muerto and e.posicion == self.pos_jugador:
-                if self.modo == "Escapa":
-                    messagebox.showinfo("Derrota", "Un enemigo te alcanzó. Perdiste.")
-                    actualizar_puntajes("Escapa", self.nombre_jugador, self.puntaje)
-                    self.jugando = False
-                elif self.modo == "Cazador":
-                    pts = 50
-                    self.puntaje += pts
-                    e.muerto = True
-                    e.tiempo_muerte = time.time()
-                    messagebox.showinfo("Cazador", f"Cazaste a un enemigo! +{pts} pts")
-                self.dibujar_mapa()
-                self.actualizar_etiquetas_ui()
-                break
+            return
+
+        self.verificar_colision_enemigo_jugador()
+
+    def siguiente_paso_bfs(self, inicio, fin, tipos_validos, obstaculos=None):
+        #E: Posicion, Posicion, tupla, set
+        #S: Posicion
+        #R:
+        #F: Encuentra el siguiente paso hacia el objetivo usando BFS
+        cola = [(inicio, [])]
+        visitados = {inicio}
+        if obstaculos:
+            visitados.update(obstaculos)
+            
+        while cola:
+            actual, camino = cola.pop(0)
+            if actual == fin:
+                return camino[0] if camino else actual
+            
+            direcciones = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            random.shuffle(direcciones)
+            for df, dc in direcciones:
+                nf, nc = actual.fila + df, actual.columna + dc
+                if 0 <= nf < FILAS and 0 <= nc < COLUMNAS:
+                    vecino = Posicion(nf, nc)
+                    if vecino not in visitados:
+                        if self.mapa[nf][nc] in tipos_validos:
+                            visitados.add(vecino)
+                            cola.append((vecino, camino + [vecino]))
+        return inicio
 
     def ciclo_juego(self):
         #E:
@@ -474,7 +566,7 @@ class AplicacionJuego:
 
             for e in self.enemigos:
                 if e.muerto:
-                    if e.tiempo_muerte and (ahora - e.tiempo_muerte >= TIEMPO_REAPARICION_ENEMIGO):
+                    if self.modo == "Escapa" and e.tiempo_muerte and (ahora - e.tiempo_muerte >= TIEMPO_REAPARICION_ENEMIGO):
                         e.posicion = self.encontrar_celda_libre(cerca_borde=True)
                         e.muerto = False
                         e.tiempo_muerte = None
@@ -482,8 +574,11 @@ class AplicacionJuego:
                     if self.modo == "Escapa":
                         self.mover_enemigo_hacia(e, self.pos_jugador)
                     else:
-                        self.mover_enemigo_lejos(e, self.pos_jugador)
+                        paso = self.siguiente_paso_bfs(e.posicion, self.pos_salida, (CAMINO, LIANA), obstaculos={self.pos_jugador})
+                        e.posicion = paso
             
+            self.verificar_colision_enemigo_jugador()
+
             for e in self.enemigos:
                 if not e.muerto:
                     for t in list(self.trampas):
